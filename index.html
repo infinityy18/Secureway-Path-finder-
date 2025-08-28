@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Best Route and Distance Calculator</title>
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f9;
+    }
+    h1 {
+      text-align: center;
+      margin-top: 20px;
+      color: #333;
+    }
+    .container {
+      max-width: 1000px;
+      margin: 20px auto;
+      background-color: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    #map {
+      height: 500px;
+      margin-top: 20px;
+      border-radius: 10px;
+    }
+    .form-group {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    input[type="text"] {
+      width: 48%;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+    button {
+      padding: 12px 20px;
+      background-color: #4CAF50;
+      color: white;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .output {
+      margin-top: 20px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+    }
+    .error {
+      color: red;
+    }
+    #directionsPanel {
+      margin-top: 20px;
+      padding: 10px;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Best Route and Distance Calculator</h1>
+
+  <div class="container">
+    <div class="form-group">
+      <input id="origin" type="text" placeholder="Enter Origin City">
+      <input id="destination" type="text" placeholder="Enter Destination City">
+    </div>
+    <button onclick="calculateRoute()">Calculate Best Route</button>
+
+    <div id="output" class="output"></div>
+    <div id="directionsPanel"></div>
+    <div id="map"></div>
+  </div>
+
+  <!-- Load Google Maps API with Directions, Places, and Traffic libraries -->
+  <script async defer
+    src="https://maps.gomaps.pro/maps/api/js?key=AlzaSyQDMyzDSq-yv9PQ7FQQ1L69RROuTUkv_Ji&libraries=geometry,places,directions&callback=initMap">
+  </script>
+
+  <script>
+    let map, directionsService, directionsRenderer, originAutocomplete, destinationAutocomplete, trafficLayer;
+    let markerOrigin, markerDestination;
+
+    // Initialize map
+    function initMap() {
+      map = new google.maps.Map(document.getElementById('map'), {
+        center: { lat: 20.5937, lng: 78.9629 },  // Centered on India
+        zoom: 5
+      });
+
+      directionsService = new google.maps.DirectionsService();
+      directionsRenderer = new google.maps.DirectionsRenderer({ map: map });
+      trafficLayer = new google.maps.TrafficLayer();
+      
+      // Initialize Autocomplete for origin and destination input fields
+      const originInput = document.getElementById('origin');
+      const destinationInput = document.getElementById('destination');
+
+      originAutocomplete = new google.maps.places.Autocomplete(originInput);
+      originAutocomplete.bindTo('bounds', map);
+
+      destinationAutocomplete = new google.maps.places.Autocomplete(destinationInput);
+      destinationAutocomplete.bindTo('bounds', map);
+
+      // Add listener for when the user selects a place
+      originAutocomplete.addListener('place_changed', () => {
+        const place = originAutocomplete.getPlace();
+        if (place.geometry) {
+          if (markerOrigin) {
+            markerOrigin.setMap(null); // Remove previous marker
+          }
+          markerOrigin = new google.maps.Marker({
+            position: place.geometry.location,
+            map: map,
+            title: 'Origin'
+          });
+          map.setCenter(place.geometry.location);
+        }
+      });
+
+      destinationAutocomplete.addListener('place_changed', () => {
+        const place = destinationAutocomplete.getPlace();
+        if (place.geometry) {
+          if (markerDestination) {
+            markerDestination.setMap(null); // Remove previous marker
+          }
+          markerDestination = new google.maps.Marker({
+            position: place.geometry.location,
+            map: map,
+            title: 'Destination'
+          });
+          map.setCenter(place.geometry.location);
+        }
+      });
+    }
+
+    // Function to calculate the best route and distance
+    function calculateRoute() {
+      const origin = document.getElementById('origin').value;
+      const destination = document.getElementById('destination').value;
+      const output = document.getElementById('output');
+      const directionsPanel = document.getElementById('directionsPanel');
+
+      if (!origin || !destination) {
+        output.innerHTML = '<span class="error">Please enter both origin and destination!</span>';
+        return;
+      }
+
+      const request = {
+        origin: origin,
+        destination: destination,
+        travelMode: google.maps.TravelMode.DRIVING, // Can be changed to BICYCLING, WALKING, or TRANSIT
+        unitSystem: google.maps.UnitSystem.METRIC,
+        avoidFerries: false,
+        avoidHighways: false,
+        avoidTolls: false,
+        provideRouteAlternatives: true, // Enable alternative routes
+      };
+
+      directionsService.route(request, function(response, status) {
+        if (status === 'OK') {
+          directionsRenderer.setDirections(response);
+
+          // Clear previous directions
+          directionsPanel.innerHTML = '';
+
+          const routes = response.routes;
+          routes.forEach((route, index) => {
+            const leg = route.legs[0];
+            const directionDiv = document.createElement('div');
+            directionDiv.innerHTML = `
+              <h4>Route ${index + 1}</h4>
+              <p><strong>Distance:</strong> ${leg.distance.text}</p>
+              <p><strong>Duration:</strong> ${leg.duration.text}</p>
+              <ol>${leg.steps.map(step => `<li>${step.instructions}</li>`).join('')}</ol>
+            `;
+            directionsPanel.appendChild(directionDiv);
+          });
+
+          const distance = response.routes[0].legs[0].distance.text;
+          const duration = response.routes[0].legs[0].duration.text;
+          output.innerHTML = `Distance: ${distance}<br>Duration: ${duration}`;
+        } else {
+          output.innerHTML = '<span class="error">Unable to find a route. Please try again.</span>';
+        }
+      });
+
+      // Enable Traffic Layer
+      trafficLayer.setMap(map);
+    }
+  </script>
+
+</body>
+</html>

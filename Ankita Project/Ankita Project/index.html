@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Best Route and Distance Calculator</title>
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f9;
+    }
+    h1 {
+      text-align: center;
+      margin-top: 20px;
+      color: #333;
+    }
+    .container {
+      max-width: 1000px;
+      margin: 20px auto;
+      background-color: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    #map {
+      height: 500px;
+      margin-top: 20px;
+      border-radius: 10px;
+    }
+    .form-group {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    input[type="text"] {
+      width: 48%;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+    button {
+      padding: 12px 20px;
+      background-color: #4CAF50;
+      color: white;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .output {
+      margin-top: 20px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: bold;
+    }
+    .error {
+      color: red;
+    }
+    #directionsPanel {
+      margin-top: 20px;
+      padding: 10px;
+      background-color: #fff;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Best Route and Distance Calculator</h1>
+
+  <div class="container">
+    <div class="form-group">
+      <input id="origin" type="text" placeholder="Enter Origin City">
+      <input id="destination" type="text" placeholder="Enter Destination City">
+    </div>
+    <button onclick="calculateRoute()">Calculate Best Route</button>
+
+    <div id="output" class="output"></div>
+    <div id="directionsPanel"></div>
+    <div id="map"></div>
+  </div>
+
+  <!-- Load Google Maps API with Directions, Places, and Traffic libraries -->
+  <script async defer
+    src="https://maps.gomaps.pro/maps/api/js?key=AlzaSy4su9fn3xUm0ZhEYE0rcTc8FBIg4toTlLk&libraries=geometry,places,directions&callback=initMap">
+  </script>
+
+  <script>
+    let map, directionsService, directionsRenderer, originAutocomplete, destinationAutocomplete, trafficLayer;
+    let markerOrigin, markerDestination;
+    let crimeDataPoints = [];
+    const CRIME_TOLERANCE_DEGREES = 0.003; // ~300m buffer around the route
+    let routeRenderers = [];
+
+    // Initialize map
+    function initMap() {
+      map = new google.maps.Map(document.getElementById('map'), {
+        center: { lat: 20.5937, lng: 78.9629 },  // Centered on India
+        zoom: 5
+      });
+
+      directionsService = new google.maps.DirectionsService();
+      directionsRenderer = new google.maps.DirectionsRenderer({ map: map });
+      trafficLayer = new google.maps.TrafficLayer();
+      
+      // Initialize Autocomplete for origin and destination input fields
+      const originInput = document.getElementById('origin');
+      const destinationInput = document.getElementById('destination');
+
+      originAutocomplete = new google.maps.places.Autocomplete(originInput);
+      originAutocomplete.bindTo('bounds', map);
+
+      destinationAutocomplete = new google.maps.places.Autocomplete(destinationInput);
+      destinationAutocomplete.bindTo('bounds', map);
+
+      // Add listener for when the user selects a place
+      originAutocomplete.addListener('place_changed', () => {
+        const place = originAutocomplete.getPlace();
+        if (place.geometry) {
+          if (markerOrigin) {
+            markerOrigin.setMap(null); // Remove previous marker
+          }
+          markerOrigin = new google.maps.Marker({
+            position: place.geometry.location,
+            map: map,
+            title: 'Origin'
+          });
+          map.setCenter(place.geometry.location);
+        }
+      });
+
+      destinationAutocomplete.addListener('place_changed', () => {
+        const place = destinationAutocomplete.getPlace();
+        if (place.geometry) {
+          if (markerDestination) {
+            markerDestination.setMap(null); // Remove previous marker
+          }
+          markerDestination = new google.maps.Marker({
+            position: place.geometry.location,
+            map: map,
+            title: 'Destination'
+          });
+          map.setCenter(place.geometry.location);
+        }
+      });
+
+      // Load crime data
+      fetch('../crimeData.json')
+        .then(res => res.json())
+        .then(data => {
+          crimeDataPoints = Array.isArray(data) ? data : [];
+        })
+        .catch(err => {
+          console.error('Failed to load crime data:', err);
+          crimeDataPoints = [];
+        });
+    }
+
+    // Function to calculate the best route and distance
+    function calculateRoute() {
+      const origin = document.getElementById('origin').value;
+      const destination = document.getElementById('destination').value;
+      const output = document.getElementById('output');
+      const directionsPanel = document.getElementById('directionsPanel');
+
+      if (!origin || !destination) {
+        output.innerHTML = '<span class="error">Please enter both origin and destination!</span>';
+        return;
+      }
+
+      const request = {
+        origin: origin,
+        destination: destination,
+        travelMode: google.maps.TravelMode.DRIVING, // Can be changed to BICYCLING, WALKING, or TRANSIT
+        unitSystem: google.maps.UnitSystem.METRIC,
+        avoidFerries: false,
+        avoidHighways: false,
+        avoidTolls: false,
+        provideRouteAlternatives: true, // Enable alternative routes
+      };
+
+      directionsService.route(request, function(response, status) {
+        if (status === 'OK') {
+          // Clear previous drawn routes
+          if (routeRenderers && routeRenderers.length) {
+            routeRenderers.forEach(r => r.setMap(null));
+            routeRenderers = [];
+          }
+
+          // Compute crime scores and choose best route (shortest distance, then lowest crime)
+          const routes = response.routes;
+          const routeMetrics = routes.map(route => ({
+            distanceMeters: route.legs.reduce((sum, leg) => sum + (leg.distance?.value || 0), 0),
+            durationSeconds: route.legs.reduce((sum, leg) => sum + (leg.duration?.value || 0), 0),
+            crimeScore: computeCrimeScoreForRoute(route)
+          }));
+
+          const selectedIndex = pickBestRoute(routeMetrics);
+
+          // Draw only the selected route in purple; do not render other alternatives
+          directionsRenderer.setOptions({
+            suppressMarkers: true,
+            polylineOptions: {
+              strokeColor: '#8e44ad',
+              strokeOpacity: 0.9,
+              strokeWeight: 6
+            }
+          });
+          directionsRenderer.setDirections(response);
+          if (typeof directionsRenderer.setRouteIndex === 'function') {
+            directionsRenderer.setRouteIndex(selectedIndex);
+          }
+
+          // Clear previous directions
+          directionsPanel.innerHTML = '';
+
+          const selLeg2 = response.routes[selectedIndex].legs[0];
+          const selMetrics2 = routeMetrics[selectedIndex];
+          const directionDiv = document.createElement('div');
+          directionDiv.innerHTML = `
+            <h4>Selected Route (Purple): Shortest distance with lower crime</h4>
+            <p><strong>Distance:</strong> ${selLeg2.distance.text}</p>
+            <p><strong>Duration:</strong> ${selLeg2.duration.text}</p>
+            <p><strong>Crime score (lower is safer):</strong> ${selMetrics2.crimeScore}</p>
+            <ol>${selLeg2.steps.map(step => `<li>${step.instructions}</li>`).join('')}</ol>
+          `;
+          directionsPanel.appendChild(directionDiv);
+
+          const selLeg = response.routes[selectedIndex].legs[0];
+          const sel = routeMetrics[selectedIndex];
+          output.innerHTML = `Selected Route (Purple): Distance ${selLeg.distance.text}, Duration ${selLeg.duration.text}, Crime score ${sel.crimeScore}`;
+        } else {
+          output.innerHTML = '<span class="error">Unable to find a route. Please try again.</span>';
+        }
+      });
+
+      // Enable Traffic Layer
+      trafficLayer.setMap(map);
+    }
+
+    function computeCrimeScoreForRoute(route) {
+      try {
+        if (!crimeDataPoints || crimeDataPoints.length === 0) return 0;
+        const path = route.overview_path || [];
+        if (!path || path.length === 0) return 0;
+        const polyline = new google.maps.Polyline({ path });
+        let score = 0;
+        for (let i = 0; i < crimeDataPoints.length; i++) {
+          const p = crimeDataPoints[i];
+          const point = new google.maps.LatLng(p.lat, p.lon);
+          const near = google.maps.geometry.poly.isLocationOnEdge(point, polyline, CRIME_TOLERANCE_DEGREES);
+          if (near) {
+            score += Number(p.severity) || 0;
+          }
+        }
+        return score;
+      } catch (e) {
+        console.error('computeCrimeScoreForRoute error', e);
+        return 0;
+      }
+    }
+
+    function pickBestRoute(metrics) {
+      if (!metrics || metrics.length === 0) return 0;
+      // Prefer shorter distance; if within ~1% distance, prefer lower crime score
+      let bestIdx = 0;
+      for (let i = 1; i < metrics.length; i++) {
+        const a = metrics[bestIdx];
+        const b = metrics[i];
+        const distDiff = b.distanceMeters - a.distanceMeters;
+        const maxDist = Math.max(a.distanceMeters, b.distanceMeters);
+        const withinOnePercent = Math.abs(distDiff) <= 0.01 * maxDist;
+        if (b.distanceMeters < a.distanceMeters && !withinOnePercent) {
+          bestIdx = i;
+          continue;
+        }
+        if (withinOnePercent && b.crimeScore < a.crimeScore) {
+          bestIdx = i;
+        }
+      }
+      return bestIdx;
+    }
+  </script>
+
+</body>
+</html>
