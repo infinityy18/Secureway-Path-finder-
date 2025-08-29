@@ -53,4 +53,4 @@ Security Layer: Custom heuristics for path safety
 🤝 Contributing
 
 Contributions, issues, and feature requests are welcome!
-Feel free to fork this repository and open a pull request.
+
